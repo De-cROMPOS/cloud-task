@@ -4,116 +4,63 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"net/http/httputil"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"main/balancer"
+	"main/handlers"
+	"main/internal"
+	redisdb "main/redisDB"
 )
 
 func main() {
+	// Initializing redis client
+	redisClient := redisdb.NewClient("localhost:6379")
+	if err := redisClient.Ping(context.Background()); err != nil {
+		log.Fatalf("Redis connection failed: %v", err)
+	}
+
 	// Initializing balancer
 	lb := balancer.NewRoundRobin()
-
-	// Loading cfg
 	cfg := balancer.NewConfigData()
 	if err := cfg.GetCfgData(); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-
-	// Updating server
 	if err := lb.UpdateServers(cfg); err != nil {
 		log.Fatalf("Failed to update servers: %v", err)
 	}
 
-	// Updating servers in goroutine
+	// graceful shutdown ctx
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go runConfigUpdater(ctx, lb, cfg)
 
-	// Setting up reverse pproxy
-	proxy := &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			server, err := lb.Generate()
-			if err != nil {
-				log.Printf("No available servers: %v", err)
-				return
-			}
+	// Background tickers
+	go internal.RunConfigUpdater(ctx, lb, cfg)         // Cfg updater
+	go redisClient.StartRefillTicker(ctx, time.Second) // Token refiller
 
-			req.URL.Scheme = server.Addr.Scheme
-			req.URL.Host = server.Addr.Host
-			req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
-			req.Host = server.Addr.Host
-		},
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			log.Printf("Proxy error: %v", err)
-			w.WriteHeader(http.StatusBadGateway)
-		},
-	}
+	mux := http.NewServeMux()
 
-	// setting up HTTP server
+	// Making handlers
+	dbHandler := handlers.NewDBHandler(redisClient) // Redis handler 
+	balancerHandler := handlers.NewBalancerHandler(redisClient, lb) // Balancer handler
+
+	mux.Handle("/clients", dbHandler)
+	mux.Handle("/", balancerHandler)
+
+	// Server settings
+	addr := ":"+lb.Port
 	server := &http.Server{
-		Addr:    ":" + lb.Port,
-		Handler: proxy,
+		Addr:    addr,
+		Handler: mux,
 	}
 
-	// Graceful shutdown
-	go handleShutdown(server, cancel)
-
-	// Starting our balancer server
-	log.Printf("Load balancer started on port %s", lb.Port)
-	log.Printf("Backends: %v", cfg.Servers)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("Server error: %v", err)
-	}
-}
-
-func runConfigUpdater(ctx context.Context, lb *balancer.RoundRobin, cfg *balancer.ConfigData) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if err := cfg.GetCfgData(); err != nil {
-				log.Printf("Config reload error: %v", err)
-				continue
-			}
-
-			if err := lb.UpdateServers(cfg); err != nil {
-				log.Printf("Servers update error: %v", err)
-			} else {
-				log.Printf("Config reloaded successfully. Backends: %v", cfg.Servers)
-			}
-
-		case <-ctx.Done():
-			log.Println("Stopping config updater")
-			return
+	// Starting server
+	go func() {
+		log.Println("Server started on", addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %v", err)
 		}
-	}
+	}()
+
+	// Waiting for signals for graceful shutdown
+	internal.HandleShutdown(server, cancel)
 }
-
-func handleShutdown(server *http.Server, cancel context.CancelFunc) {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	<-sigChan
-	log.Println("Shutting down server...")
-
-	cancel()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("Shutdown error: %v", err)
-	}
-	log.Println("Server stopped")
-}
-
-// надо сделать хелфчек перед тем, как вызывать некст сервак
-// добавить логи
-// сделать по тикеру обновление списка серваков
-// залогировать как то удаление старых серваков и добавление новых

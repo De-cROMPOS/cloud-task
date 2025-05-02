@@ -17,7 +17,7 @@ type Balancer interface {
 
 // roundrobin structure
 type RoundRobin struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	Port    string
 	servers []*backendServer
 	pointer int
@@ -25,7 +25,7 @@ type RoundRobin struct {
 
 func NewRoundRobin() *RoundRobin {
 	return &RoundRobin{
-		mu:      sync.Mutex{},
+		mu:      sync.RWMutex{},
 		servers: make([]*backendServer, 0),
 		pointer: 0,
 	}
@@ -48,9 +48,9 @@ func (r *RoundRobin) Generate() (*backendServer, error) {
 		backServ := r.servers[r.pointer]
 
 		//checking if the server is available
-		if !(r.isServerAvailable(backServ.Addr)) {
-			r.servers[r.pointer].markUnavailable(1 * time.Minute)
-			log.Printf("server %v unavailable at the moment, turning it off for a minute", backServ.Addr)
+		if (backServ.IsAlive) && !(r.isServerAvailable(backServ.Addr)) {
+			backServ.markUnavailable(1 * time.Minute)
+			log.Printf("server %v unavailable at the moment, turning it off for a minute", backServ.Addr.Host)
 		}
 
 		//returning server if it works, moving to the next server if not

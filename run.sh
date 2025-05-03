@@ -4,8 +4,8 @@ set -e
 
 REDIS_CONTAINER="my-redis"
 IMITATOR_CMD="go run servers-imitator/imitator.go"
-BENCH_CMD_01="go test -bench=BenchmarkBalancerWithClientSetup ./tests -cpuprofile=\"./tests/benchmarks-output/balancerCPU.out\" -memprofile=\"./tests/benchmarks-output/balancerMEM.out\""
-BENCH_CMD_02="go test -bench=BenchmarkCreateAndDeleteClient ./tests -cpuprofile=\"./tests/benchmarks-output/CPU.out\" -memprofile=\"./tests/benchmarks-output/MEM.out\""
+BENCH_CMD_01="go test -bench=BenchmarkBalancerWithClientSetup ./tests/benchmarks_test.go -cpuprofile=\"./tests/benchmarks-output/balancerCPU.out\" -memprofile=\"./tests/benchmarks-output/balancerMEM.out\""
+BENCH_CMD_02="go test -bench=BenchmarkCreateAndDeleteClient ./tests/benchmarks_test.go -cpuprofile=\"./tests/benchmarks-output/CPU.out\" -memprofile=\"./tests/benchmarks-output/MEM.out\""
 APP_CMD="go run main.go"
 TESTING_CMD="go test ./tests/balancer_test.go -v"
 COVERAGE_CMD="go test -coverprofile=tests/coverage-output/cover.out -coverpkg=./... ./tests/... && go tool cover -html=tests/coverage-output/cover.out -o tests/coverage-output/coverage.html"

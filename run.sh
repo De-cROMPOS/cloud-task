@@ -77,6 +77,7 @@ case "$1" in
         echo "  redis - Запустить только Redis"
         echo "  stop-redis - Остановить Redis"
         echo "  imitator - Запустить server-imitator"
+        echo "  main - Запустить саму программу"
         echo "  bench - Запустить бенчмарки"
         echo "  test - Запустить тесты"
         echo "  coverage - Запустить тест покрытия"

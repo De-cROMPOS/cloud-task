@@ -43,10 +43,21 @@ func (h *DBHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Capacity int    `json:"capacity"`
 			Rate     int    `json:"rate_per_sec"`
 		}
+
+		// Setting up default values
+		client.Capacity = 100
+        client.Rate = 10
+
 		if err := json.NewDecoder(r.Body).Decode(&client); err != nil {
 			errorResponser(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
+
+		// Validation
+		if client.APIKey == "" {
+            errorResponser(w, "API key is required", http.StatusBadRequest)
+            return
+        }
 		
 		// Adding client to redis DB
 		if err := h.redisClient.AddClient(r.Context(), client.APIKey, client.Capacity, client.Rate); err != nil {

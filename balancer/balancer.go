@@ -9,13 +9,13 @@ import (
 	"time"
 )
 
-// interface to generate balancer structs
+// Interface to generate balancer structs
 type Balancer interface {
 	UpdateServers(*ConfigData) error
 	Generate() (*backendServer, error)
 }
 
-// roundrobin structure
+// Roundrobin structure
 type RoundRobin struct {
 	mu      sync.RWMutex
 	Port    string
@@ -31,7 +31,7 @@ func NewRoundRobin() *RoundRobin {
 	}
 }
 
-// main logic of RoundRobin algorithm
+// Generating servers by RoundRobin algorithm
 func (r *RoundRobin) Generate() (*backendServer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -67,7 +67,7 @@ func (r *RoundRobin) Generate() (*backendServer, error) {
 	return nil, fmt.Errorf("no server available")
 }
 
-// pinging server to check if its available
+// Pinging server to check if its available
 func (r *RoundRobin) isServerAvailable(url *url.URL) bool {
 	conn, err := net.DialTimeout("tcp", url.Host, 2*time.Second)
 	if err != nil {
@@ -79,6 +79,10 @@ func (r *RoundRobin) isServerAvailable(url *url.URL) bool {
 
 // Updating server list from config
 func (r *RoundRobin) UpdateServers(cd *ConfigData) error {
+
+	if (len(cd.Servers) == 0) {
+		return fmt.Errorf("no servers in config file, please add")
+	}
 
 	// Enum for server status
 	type updateStatus int

@@ -1,0 +1,598 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>balancer: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">main/balancer/balancer.go (96.2%)</option>
+				
+				<option value="file1">main/balancer/config.go (83.3%)</option>
+				
+				<option value="file2">main/balancer/servers.go (45.5%)</option>
+				
+				<option value="file3">main/handlers/handlers.go (72.2%)</option>
+				
+				<option value="file4">main/redisDB/redisDB.go (100.0%)</option>
+				
+				<option value="file5">main/redisDB/ticker.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package balancer
+
+import (
+        "fmt"
+        "log"
+        "net"
+        "net/url"
+        "sync"
+        "time"
+)
+
+// Interface to generate balancer structs
+type Balancer interface {
+        UpdateServers(*ConfigData) error
+        Generate() (*backendServer, error)
+}
+
+// Roundrobin structure
+type RoundRobin struct {
+        mu      sync.RWMutex
+        Port    string
+        servers []*backendServer
+        pointer int
+}
+
+func NewRoundRobin() *RoundRobin <span class="cov8" title="1">{
+        return &amp;RoundRobin{
+                mu:      sync.RWMutex{},
+                servers: make([]*backendServer, 0),
+                pointer: 0,
+        }
+}</span>
+
+// Generating servers by RoundRobin algorithm
+func (r *RoundRobin) Generate() (*backendServer, error) <span class="cov8" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+
+        serversLen := len(r.servers)
+
+        r.pointer++
+        if r.pointer &gt;= serversLen </span><span class="cov8" title="1">{
+                r.pointer = 0
+        }</span>
+
+        <span class="cov8" title="1">for range serversLen </span><span class="cov8" title="1">{
+
+                backServ := r.servers[r.pointer]
+
+                //checking if the server is available
+                if (backServ.IsAlive) &amp;&amp; !(r.isServerAvailable(backServ.Addr)) </span><span class="cov8" title="1">{
+                        backServ.markUnavailable(1 * time.Minute)
+                        log.Printf("server %v unavailable at the moment, turning it off for a minute", backServ.Addr.Host)
+                }</span>
+
+                //returning server if it works, moving to the next server if not
+                <span class="cov8" title="1">if backServ.IsAlive </span><span class="cov8" title="1">{
+                        return backServ, nil
+                }</span> else<span class="cov8" title="1"> {
+                        r.pointer++
+                        if r.pointer &gt;= serversLen </span><span class="cov8" title="1">{
+                                r.pointer = 0
+                        }</span>
+                }
+        }
+
+        <span class="cov8" title="1">return nil, fmt.Errorf("no server available")</span>
+}
+
+// Pinging server to check if its available
+func (r *RoundRobin) isServerAvailable(url *url.URL) bool <span class="cov8" title="1">{
+        conn, err := net.DialTimeout("tcp", url.Host, 2*time.Second)
+        if err != nil </span><span class="cov8" title="1">{
+                return false
+        }</span>
+        <span class="cov8" title="1">conn.Close()
+        return true</span>
+}
+
+// Updating server list from config
+func (r *RoundRobin) UpdateServers(cd *ConfigData) error <span class="cov8" title="1">{
+
+        if (len(cd.Servers) == 0) </span><span class="cov8" title="1">{
+                return fmt.Errorf("no servers in config file, please add")
+        }</span>
+
+        // Enum for server status
+        <span class="cov8" title="1">type updateStatus int
+        const (
+                serverNew updateStatus = iota
+                serverExisted
+        )
+
+        newServerArr := make([]*backendServer, 0)
+        serversMap := make(map[string]updateStatus)
+
+        for _, el := range cd.Servers </span><span class="cov8" title="1">{
+                serversMap[el] = serverNew
+        }</span>
+
+        <span class="cov8" title="1">r.mu.Lock()
+
+        r.Port = cd.Port
+
+        // removing unused servers
+        for _, serversEl := range r.servers </span><span class="cov8" title="1">{
+                host := serversEl.Addr.Host
+                if _, exists := serversMap[host]; exists </span><span class="cov8" title="1">{
+                        newServerArr = append(newServerArr, serversEl)
+                        serversMap[host] = serverExisted
+                        // log.Printf("server %v kept in balancer", host)
+                }</span> else<span class="cov8" title="1"> {
+                        log.Printf("server %v removed from balancer by cfg file", serversEl.Addr.Host)
+                }</span>
+        }
+        <span class="cov8" title="1">r.mu.Unlock()
+
+        // Adding new servers
+        for serverHost, status := range serversMap </span><span class="cov8" title="1">{
+                if status == serverNew </span><span class="cov8" title="1">{
+                        parsedURL, err := url.Parse("http://" + serverHost)
+                        if err != nil </span><span class="cov0" title="0">{
+                                log.Printf("error parsing server URL %v: %v", serverHost, err)
+                                continue</span>
+                        }
+
+                        <span class="cov8" title="1">newServerArr = append(newServerArr, &amp;backendServer{
+                                Addr:    parsedURL,
+                                IsAlive: true,
+                        })
+                        log.Printf("server %v added to balancer", serverHost)</span>
+                }
+        }
+
+        <span class="cov8" title="1">r.mu.Lock()
+        r.servers = newServerArr
+        r.mu.Unlock()
+
+        return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package balancer
+
+import (
+        "encoding/json"
+        "fmt"
+        "os"
+        "path/filepath"
+        "runtime"
+)
+
+func getConfigPath() string <span class="cov8" title="1">{
+        _, filename, _, _ := runtime.Caller(0) // Getting path
+        projectRoot := filepath.Dir(filepath.Dir(filename))
+        return filepath.Join(projectRoot, "config", "cfg.json")
+}</span>
+
+var (
+        configPath = getConfigPath()
+)
+
+type ConfigData struct {
+        Port    string   `json:"port"`
+        Servers []string `json:"server"`
+}
+
+func NewConfigData() *ConfigData <span class="cov8" title="1">{
+        return &amp;ConfigData{
+                Port:    "",
+                Servers: make([]string, 0),
+        }
+}</span>
+
+// getting data from config file to transfer it to tlhe balancer
+func (cd *ConfigData) GetCfgData() error <span class="cov8" title="1">{
+        file, err := os.Open(configPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("config file can't be open: %v", err)
+        }</span>
+        <span class="cov8" title="1">defer file.Close()
+
+        decoder := json.NewDecoder(file)
+        if err := decoder.Decode(cd); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("error while decoding cfg: %v", err)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package balancer
+
+import (
+        "log"
+        "net/url"
+        "sync"
+        "time"
+)
+
+type backendServer struct {
+        Addr    *url.URL
+        IsAlive bool
+        recoveryTimer *time.Timer
+        mu sync.Mutex
+}
+
+//setting freeze on unavailable server
+func (s *backendServer) markUnavailable(duration time.Duration) <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        s.IsAlive = false
+
+        if s.recoveryTimer != nil </span><span class="cov0" title="0">{
+                s.recoveryTimer.Stop()
+        }</span>
+
+        //setting freeze timer
+        <span class="cov8" title="1">s.recoveryTimer = time.AfterFunc(duration, func() </span><span class="cov0" title="0">{
+                s.mu.Lock()
+                s.IsAlive = true
+                s.recoveryTimer = nil
+                log.Printf("server %v cooldown ended, now it's available again", s.Addr)
+                s.mu.Unlock()
+        }</span>)
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package handlers
+
+import (
+        "encoding/json"
+        "log"
+        "net/http"
+        "net/http/httputil"
+
+        "main/balancer"
+        redisdb "main/redisDB"
+)
+
+// Struct to return errors like { "code": 429, "message": "Rate limit exceeded" }
+type errorResponse struct {
+        Code    int    `json:"code"`
+        Message string `json:"message"`
+}
+
+func errorResponser(w http.ResponseWriter, message string, code int) <span class="cov8" title="1">{
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(code)
+    json.NewEncoder(w).Encode(errorResponse{
+        Code:    code,
+        Message: message,
+    })
+        log.Printf("An error happened while processing handler: %v. Exit code: %v", message, code)
+}</span>
+
+// Redis handler
+type DBHandler struct {
+        redisClient *redisdb.Client
+}
+
+func NewDBHandler(redisClient *redisdb.Client) *DBHandler <span class="cov8" title="1">{
+        return &amp;DBHandler{redisClient: redisClient}
+}</span>
+
+func (h *DBHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        switch r.Method </span>{
+        case http.MethodPost:<span class="cov8" title="1">
+                var client struct {
+                        APIKey   string `json:"api_key"`
+                        Capacity int    `json:"capacity"`
+                        Rate     int    `json:"rate_per_sec"`
+                }
+
+                // Setting up default values
+                client.Capacity = 100
+        client.Rate = 10
+
+                if err := json.NewDecoder(r.Body).Decode(&amp;client); err != nil </span><span class="cov0" title="0">{
+                        errorResponser(w, "Invalid request body", http.StatusBadRequest)
+                        return
+                }</span>
+
+                // Validation
+                <span class="cov8" title="1">if client.APIKey == "" </span><span class="cov8" title="1">{
+            errorResponser(w, "API key is required", http.StatusBadRequest)
+            return
+        }</span>
+                
+                // Adding client to redis DB
+                <span class="cov8" title="1">if err := h.redisClient.AddClient(r.Context(), client.APIKey, client.Capacity, client.Rate); err != nil </span><span class="cov0" title="0">{
+                        errorResponser(w, "Failed to add client", http.StatusInternalServerError)
+                        return
+                }</span>
+
+                <span class="cov8" title="1">log.Printf("Added client %v with cap = %v and rate per sec = %v", client.APIKey, client.Capacity, client.Rate)
+
+                w.WriteHeader(http.StatusCreated)</span>
+
+        case http.MethodDelete:<span class="cov8" title="1">
+                apiKey := r.URL.Query().Get("api_key")
+                if apiKey == "" </span><span class="cov8" title="1">{
+                        errorResponser(w, "API key required", http.StatusBadRequest)
+                        return
+                }</span>
+
+                // Deleting client from DB
+                <span class="cov8" title="1">if err := h.redisClient.DeleteClient(r.Context(), apiKey); err != nil </span><span class="cov0" title="0">{
+                        errorResponser(w, "Failed to delete client", http.StatusInternalServerError)
+                        return
+                }</span>
+
+                <span class="cov8" title="1">log.Printf("Deleted client %v", apiKey)
+
+                w.WriteHeader(http.StatusOK)</span>
+
+        default:<span class="cov0" title="0">
+                errorResponser(w, "Method not allowed", http.StatusBadRequest)</span>
+        }
+}
+
+// Balancer handler
+type balancerHandler struct {
+        redisClient *redisdb.Client
+        balancer    *balancer.RoundRobin
+}
+
+func NewBalancerHandler(redisClient *redisdb.Client, server *balancer.RoundRobin) *balancerHandler <span class="cov8" title="1">{
+        return &amp;balancerHandler{redisClient: redisClient, balancer: server}
+}</span>
+
+func (h *balancerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        apiKey := r.Header.Get("api-key")
+        if apiKey == "" </span><span class="cov0" title="0">{
+                errorResponser(w, "API key required", http.StatusUnauthorized)
+                return
+        }</span>
+
+        // Checking if our api  key exists in DB and if it has enough tokens
+        <span class="cov8" title="1">allowed, err := h.redisClient.TakeToken(r.Context(), apiKey)
+        if err != nil </span><span class="cov0" title="0">{
+                errorResponser(w, "Internal server error", http.StatusInternalServerError)
+                return
+        }</span>
+        <span class="cov8" title="1">if !allowed </span><span class="cov8" title="1">{
+                errorResponser(w, "Rate limit exceeded", http.StatusTooManyRequests)
+                return
+        }</span>
+
+        // Reversing the request if everything is ok
+        <span class="cov8" title="1">proxy := &amp;httputil.ReverseProxy{
+                Director: func(req *http.Request) </span><span class="cov8" title="1">{
+                        server, err := h.balancer.Generate()
+                        if err != nil </span><span class="cov0" title="0">{
+                                log.Printf("No available servers: %v", err)
+                                return
+                        }</span>
+
+                        <span class="cov8" title="1">req.URL.Scheme = server.Addr.Scheme
+                        req.URL.Host = server.Addr.Host
+                        req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
+                        req.Host = server.Addr.Host</span>
+                },
+                ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) <span class="cov0" title="0">{
+                        log.Printf("Proxy error: %v", err)
+                        w.WriteHeader(http.StatusBadGateway)
+                }</span>,
+        }
+        <span class="cov8" title="1">proxy.ServeHTTP(w, r)</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package redisdb
+
+import (
+        "context"
+
+        "github.com/redis/go-redis/v9"
+)
+
+type Client struct {
+        rdb *redis.Client
+}
+
+func NewClient(addr string) *Client <span class="cov8" title="1">{
+        return &amp;Client{
+                rdb: redis.NewClient(&amp;redis.Options{
+                        Addr: addr, // "localhost:6379"
+                }),
+        }
+}</span>
+
+func (c *Client) Ping(ctx context.Context) error <span class="cov8" title="1">{
+        return c.rdb.Ping(ctx).Err()
+}</span>
+
+// Adding client to DB
+func (c *Client) AddClient(ctx context.Context, apiKey string, capacity, rate int) error <span class="cov8" title="1">{
+        _, err := c.rdb.HSet(ctx, apiKey,
+                "capacity", capacity,
+                "rate", rate,
+                "tokens", capacity,
+        ).Result()
+        return err
+}</span>
+
+// Deleting client info
+func (c *Client) DeleteClient(ctx context.Context, apiKey string) error <span class="cov8" title="1">{
+        return c.rdb.Del(ctx, apiKey).Err()
+}</span>
+
+// Returning true if api-key has tokens, else false
+func (c *Client) TakeToken(ctx context.Context, apiKey string) (bool, error) <span class="cov8" title="1">{
+        script := `
+                local key = KEYS[1]
+                local data = redis.call("HMGET", key, "tokens")
+                local tokens = tonumber(data[1])
+
+                if tokens and tokens &gt;= 1 then
+                        redis.call("HINCRBY", key, "tokens", -1)
+                        return 1
+                else
+                        return 0
+                end
+        `
+        res, err := c.rdb.Eval(ctx, script, []string{apiKey}).Int64()
+        return res == 1, err
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package redisdb
+
+import (
+        "context"
+        "log"
+        "time"
+)
+
+// Ticker to add tokens to clients buckets
+func (c *Client) StartRefillTicker(ctx context.Context, interval time.Duration) <span class="cov0" title="0">{
+        ticker := time.NewTicker(interval)
+        go func() </span><span class="cov0" title="0">{
+                for </span><span class="cov0" title="0">{
+                        select </span>{
+                        case &lt;-ticker.C:<span class="cov0" title="0">
+                                c.refillAllBuckets(ctx)</span>
+                        case &lt;-ctx.Done():<span class="cov0" title="0">
+                                ticker.Stop()
+                                return</span>
+                        }
+                }
+        }()
+}
+
+// Adding tokens to all the clients
+func (c *Client) refillAllBuckets(ctx context.Context) <span class="cov0" title="0">{
+
+        // Getting all the api-keys from DB
+        apiKeys, err := c.rdb.Keys(ctx, "*").Result()
+        if err != nil </span><span class="cov0" title="0">{
+                log.Printf("Failed to get client keys: %v", err)
+                return
+        }</span>
+
+        // Adding tokens to every client
+        <span class="cov0" title="0">for _, key := range apiKeys </span><span class="cov0" title="0">{
+                script := `
+                        local key = KEYS[1]
+                        local data = redis.call("HMGET", key, "capacity", "rate", "tokens")
+                        local capacity = tonumber(data[1])
+                        local rate = tonumber(data[2])
+                        local current_tokens = tonumber(data[3])
+
+                        local new_tokens = math.min(capacity, current_tokens + rate)
+
+                        redis.call("HSET", key, "tokens", new_tokens)
+
+                        return new_tokens
+                `
+                if err := c.rdb.Eval(ctx, script, []string{key}).Err(); err != nil </span><span class="cov0" title="0">{
+                        log.Printf("Failed to refill bucket %s: %v", key, err)
+                }</span>
+        }
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

@@ -4,10 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 )
 
+func getConfigPath() string {
+	_, filename, _, _ := runtime.Caller(0) // Getting path
+	projectRoot := filepath.Dir(filepath.Dir(filename))
+	return filepath.Join(projectRoot, "config", "cfg.json")
+}
+
 var (
-	configPath = "config/cfg.json"
+	configPath = getConfigPath()
 )
 
 type ConfigData struct {
@@ -22,7 +30,7 @@ func NewConfigData() *ConfigData {
 	}
 }
 
-//getting data from config file to transfer it to tlhe balancer
+// getting data from config file to transfer it to tlhe balancer
 func (cd *ConfigData) GetCfgData() error {
 	file, err := os.Open(configPath)
 	if err != nil {
